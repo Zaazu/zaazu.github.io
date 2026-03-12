@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello World - Emergent DVD Swarm</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0f172a; 
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="swarmCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('swarmCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        let boids = [];
+        let mouse = { x: -1000, y: -1000 };
+
+        // --- DVD LOGO VARIABLES ---
+        let dvdOffsetX = 0;
+        let dvdOffsetY = 0;
+        let dvdVx = 2.5; 
+        let dvdVy = 2.5; 
+        
+        // Global flags to track if ANY bird hit a wall this frame
+        let globalHitX = false;
+        let globalHitY = false;
+
+        // --- BACKGROUND TEXT VARIABLES ---
+        const bgText = "HELLO WORLD  •  "; 
+        let bgTextWidth = 0;
+
+        const groupEvadeRadius = 400; 
+        const scatterRadius = 100;    
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        window.addEventListener('mouseout', () => {
+            mouse.x = -1000;
+            mouse.y = -1000;
+        });
+
+        window.addEventListener('mousedown', () => {
+            for (let boid of boids) {
+                boid.vx += (Math.random() - 0.5) * 60;
+                boid.vy += (Math.random() - 0.5) * 60;
+            }
+        });
+
+        class Boid {
+            constructor(startX, startY) {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                
+                this.baseX = startX;
+                this.baseY = startY;
+                
+                this.targetX = startX;
+                this.targetY = startY;
+                
+                this.vx = (Math.random() - 0.5) * 10;
+                this.vy = (Math.random() - 0.5) * 10;
+                this.size = 2.5; 
+                this.maxSpeed = 7;
+                this.maxForce = 0.6;
+            }
+
+            update() {
+                let activeBaseX = this.baseX + dvdOffsetX;
+                let activeBaseY = this.baseY + dvdOffsetY;
+
+                let dxMouseBase = activeBaseX - mouse.x;
+                let dyMouseBase = activeBaseY - mouse.y;
+                let distMouseBase = Math.sqrt(dxMouseBase * dxMouseBase + dyMouseBase * dyMouseBase);
+                
+                let idealTargetX = activeBaseX;
+                let idealTargetY = activeBaseY;
+
+                if (distMouseBase < groupEvadeRadius && mouse.x !== -1000) {
+                    let pushForce = (groupEvadeRadius - distMouseBase) / groupEvadeRadius;
+                    let maxPush = 180; 
+                    idealTargetX += (dxMouseBase / distMouseBase) * (pushForce * maxPush);
+                    idealTargetY += (dyMouseBase / distMouseBase) * (pushForce * maxPush);
+                }
+
+                this.targetX += dvdVx;
+                this.targetY += dvdVy;
+
+                this.targetX += (idealTargetX - this.targetX) * 0.15;
+                this.targetY += (idealTargetY - this.targetY) * 0.15;
+
+                let dx = this.targetX - this.x;
+                let dy = this.targetY - this.y;
+                let distToTarget = Math.sqrt(dx * dx + dy * dy);
+                
+                let desiredX = dx;
+                let desiredY = dy;
+                
+                if (distToTarget > 0) {
+                    let speed = this.maxSpeed;
+                    if (distToTarget < 80) {
+                        speed = (distToTarget / 80) * this.maxSpeed; 
+                    }
+                    desiredX = (dx / distToTarget) * speed;
+                    desiredY = (dy / distToTarget) * speed;
+                }
+
+                let steerX = desiredX - this.vx;
+                let steerY = desiredY - this.vy;
+
+                let dxMouseBoid = this.x - mouse.x;
+                let dyMouseBoid = this.y - mouse.y;
+                let distMouseBoid = Math.sqrt(dxMouseBoid * dxMouseBoid + dyMouseBoid * dyMouseBoid);
+                
+                if (distMouseBoid < scatterRadius && mouse.x !== -1000) {
+                    let explodeForce = (scatterRadius - distMouseBoid) / scatterRadius;
+                    steerX += (dxMouseBoid / distMouseBoid) * (explodeForce * 25);
+                    steerY += (dyMouseBoid / distMouseBoid) * (explodeForce * 25);
+                }
+
+                steerX += (Math.random() - 0.5) * 0.5;
+                steerY += (Math.random() - 0.5) * 0.5;
+
+                let steerMag = Math.sqrt(steerX * steerX + steerY * steerY);
+                if (steerMag > this.maxForce) {
+                    steerX = (steerX / steerMag) * this.maxForce;
+                    steerY = (steerY / steerMag) * this.maxForce;
+                }
+
+                this.vx += steerX;
+                this.vy += steerY;
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // --- INDIVIDUAL COLLISION -> TRIGGERS GLOBAL BOUNCE ---
+                if (this.x <= 0) { 
+                    this.x = 0; 
+                    this.vx *= -1; 
+                    if (dvdVx < 0) globalHitX = true; // Only trigger if DVD is moving left
+                } else if (this.x >= canvas.width) { 
+                    this.x = canvas.width; 
+                    this.vx *= -1; 
+                    if (dvdVx > 0) globalHitX = true; // Only trigger if DVD is moving right
+                }
+
+                if (this.y <= 0) { 
+                    this.y = 0; 
+                    this.vy *= -1; 
+                    if (dvdVy < 0) globalHitY = true; // Only trigger if DVD is moving up
+                } else if (this.y >= canvas.height) { 
+                    this.y = canvas.height; 
+                    this.vy *= -1; 
+                    if (dvdVy > 0) globalHitY = true; // Only trigger if DVD is moving down
+                }
+            }
+
+            draw() {
+                let angle = Math.atan2(this.vy, this.vx);
+                
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(angle);
+                
+                ctx.beginPath();
+                ctx.moveTo(this.size * 2, 0); 
+                ctx.lineTo(-this.size, this.size); 
+                ctx.lineTo(-this.size, -this.size); 
+                ctx.closePath();
+                
+                ctx.fillStyle = '#38bdf8'; 
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function init() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            boids = [];
+            
+            dvdOffsetX = 0;
+            dvdOffsetY = 0;
+            dvdVx = 2.5 * (Math.random() > 0.5 ? 1 : -1); 
+            dvdVy = 2.5 * (Math.random() > 0.5 ? 1 : -1);
+
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 12vw "Segoe UI", sans-serif'; 
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            ctx.fillText('HELLO', canvas.width / 2, canvas.height / 2 - 120);
+            ctx.fillText('WORLD', canvas.width / 2, canvas.height / 2 + 120);
+
+            const textData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const step = 8; 
+            for (let y = 0; y < canvas.height; y += step) {
+                for (let x = 0; x < canvas.width; x += step) {
+                    let index = (y * canvas.width + x) * 4;
+                    if (textData[index + 3] > 128) { 
+                        boids.push(new Boid(x, y));
+                    }
+                }
+            }
+
+            ctx.font = 'bold 20px "Segoe UI", sans-serif'; 
+            bgTextWidth = ctx.measureText(bgText).width;
+        }
+
+        function animate() {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.25)'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // --- STATIC BACKGROUND ---
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)'; 
+            ctx.font = 'bold 20px "Segoe UI", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+
+            let lineSpacing = 40; 
+            let row = 0;
+
+            for (let y = 0; y < canvas.height + lineSpacing; y += lineSpacing) {
+                let isEvenRow = (row % 2 === 0);
+                let startX = isEvenRow ? 0 : -(bgTextWidth / 2);
+
+                for (let x = startX; x < canvas.width + bgTextWidth; x += bgTextWidth) {
+                    ctx.fillText(bgText, x, y);
+                }
+                row++;
+            }
+            // ------------------------------------
+
+            // Reset global hit trackers every frame
+            globalHitX = false;
+            globalHitY = false;
+
+            // Update and draw the flock
+            for (let boid of boids) {
+                boid.update();
+                boid.draw();
+            }
+
+            // --- APPLY GLOBAL DVD BOUNCE ---
+            if (globalHitX) dvdVx *= -1;
+            if (globalHitY) dvdVy *= -1;
+
+            dvdOffsetX += dvdVx;
+            dvdOffsetY += dvdVy;
+            // -------------------------------
+
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', init);
+        
+        init();
+        animate();
+    </script>
+</body>
+</html>
